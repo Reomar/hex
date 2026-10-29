@@ -1307,6 +1307,52 @@ fn changing_only_the_language_prepares_the_same_model_again() {
     );
 }
 
+/// The Sounds row opens the sheet. A set's play button plays its dictation
+/// without choosing it, and pressing it again stops it; a chip plays one
+/// sound; picking a set saves it and plays it; Escape closes the sheet.
+#[test]
+fn the_sound_sets_sheet_plays_and_chooses_sets() {
+    use crate::feedback::{Audition, Cue, SoundSet};
+    let mut rt = runtime("portal", true, GOLDEN_SIZE);
+    assert_eq!(rt.state.settings.sound_theme, SoundSet::Signature);
+    open_advanced(&mut rt, Pane::General);
+    tap(&mut rt, "sound-set-control");
+    assert!(rt.state.sound_sets.open);
+    let playing = |rt: &Runtime<Ui>| rt.state.sound_sets.playing();
+
+    tap(&mut rt, "set-click/top/play");
+    assert_eq!(playing(&rt), Some((SoundSet::Click, Audition::Dictation)));
+    assert_eq!(rt.state.settings.sound_theme, SoundSet::Signature);
+    tap(&mut rt, "set-click/top/play");
+    assert_eq!(playing(&rt), None);
+
+    // A single sound plays for under a second, so look before settling.
+    let (x, y) = rt.find("stage/cues/Stop").unwrap();
+    rt.pointer_down(x, y);
+    rt.pointer_up(x, y);
+    rt.frame(1.0 / 60.0);
+    assert_eq!(
+        playing(&rt),
+        Some((SoundSet::Signature, Audition::Cue(Cue::Stop)))
+    );
+
+    tap(&mut rt, "set-wood");
+    assert_eq!(rt.state.settings.sound_theme, SoundSet::Wood);
+    assert_eq!(playing(&rt), Some((SoundSet::Wood, Audition::Dictation)));
+    // The stage holds the HUD's window as the start sound plays.
+    for _ in 0..6 {
+        rt.frame(1.0 / 60.0);
+    }
+    let (window, _) = rt.presented("sound-sets-hud").expect("the HUD's window");
+    assert!(window[2] > 0.0 && window[3] > 0.0);
+
+    key(&mut rt, Key::Escape, Mods::default());
+    settle(&mut rt);
+    assert!(!rt.state.sound_sets.open);
+    assert_eq!(playing(&rt), None);
+    assert!(texts(&rt).iter().any(|text| text == "Wood"));
+}
+
 #[test]
 fn a_download_in_progress_can_be_cancelled() {
     let mut rt = runtime("picker-downloading", true, PANE_SIZE);
@@ -1563,8 +1609,21 @@ fn render(scene: &str, dark: bool, size: (f32, f32)) -> Option<(u32, u32, Vec<u8
     renderer.upload_images(&gpu.device, &gpu.queue, &mut rt.images);
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
     renderer.draw(&mut encoder, &target.view, rt.clear_color());
+    // The window compositor's own pass: the Sounds sheet's HUD.
+    super::sound_sets::Preview::default().render(&mut rune::compose::Frame {
+        device: &gpu.device,
+        queue: &gpu.queue,
+        encoder: &mut encoder,
+        target: &target.view,
+        format: OFFSCREEN_FORMAT,
+        size: (width, height),
+        dt: 0.0,
+        update_ms: 0.0,
+        rt: &mut rt,
+        ui: &mut renderer,
+    });
     target.copy(&mut encoder);
-    gpu.queue.submit([encoder.finish()]);
+    renderer.submit(&gpu.queue, encoder);
     Some((width, height, target.read(&gpu.device)))
 }
 

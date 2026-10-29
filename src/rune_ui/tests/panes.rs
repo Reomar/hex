@@ -1397,6 +1397,8 @@ fn platform_goldens() {
             "mac-onboarding-landed",
             "shortcut-explainer",
             "shortcut-explainer-toggle",
+            "sound-sets",
+            "sound-sets-playing",
         ] {
             check_golden(scene, dark, PANE_SIZE);
         }
