@@ -61,6 +61,47 @@ fn tap(rt: &mut Runtime<Ui>, key: &str) {
     settle(rt);
 }
 
+/// Chooses option `index` from the quiet select keyed `{key}-control`.
+fn pick(rt: &mut Runtime<Ui>, key: &str, index: usize) {
+    tap(rt, &format!("{key}-control-trigger"));
+    tap_option(rt, index);
+}
+
+/// Scrolls an open select's list to option `index` and presses it.
+fn tap_option(rt: &mut Runtime<Ui>, index: usize) {
+    let key = format!("option{index}");
+    for _ in 0..400 {
+        let option = element(rt, &key).rect;
+        let list = element(rt, "listbox").rect;
+        let middle = option[1] + option[3] / 2.0;
+        if middle > list[1] && middle < list[1] + list[3] {
+            break;
+        }
+        let dy = if middle > list[1] + list[3] {
+            20.0
+        } else {
+            -20.0
+        };
+        rt.wheel(list[0] + list[2] / 2.0, list[1] + list[3] / 2.0, dy);
+        rt.frame(1.0 / 60.0);
+    }
+    tap(rt, &key);
+}
+
+/// A window tall enough for General with its Advanced fold open.
+const TALL_SIZE: (f32, f32) = (980.0, 2800.0);
+
+/// Opens a pane's Advanced fold, as its toggle does.
+fn open_advanced(rt: &mut Runtime<Ui>, pane: Pane) {
+    if !rt.state.advanced.contains(&pane) {
+        rt.state.advanced.push(pane);
+    }
+    rt.invalidate();
+    rt.settle_all();
+    rt.frame(0.0);
+    settle(rt);
+}
+
 fn key(rt: &mut Runtime<Ui>, key: Key, mods: Mods) {
     rt.key(KeyEvent { key, mods });
     rt.frame(1.0 / 60.0);
@@ -68,13 +109,13 @@ fn key(rt: &mut Runtime<Ui>, key: Key, mods: Mods) {
 
 #[test]
 fn portal_desktops_show_what_they_granted_beside_each_recorder() {
-    let mut rt = runtime("portal", true, GOLDEN_SIZE);
+    let mut rt = runtime("portal", true, TALL_SIZE);
+    open_advanced(&mut rt, Pane::General);
     let shown = texts(&rt);
     for expected in [
-        "Dictation",
+        "Shortcut",
         "Your desktop granted F12",
         "Your desktop granted Ctrl+Alt+V",
-        "Change shortcut",
     ] {
         assert!(
             shown.iter().any(|text| text == expected),
@@ -124,7 +165,8 @@ fn a_refused_portal_shortcut_says_how_to_free_it() {
     );
     assert!(shown.iter().any(|text| text.contains("config.kdl")));
     assert!(rt.find("dictation-hotkey").is_some());
-    assert!(rt.find("dictation/card/refused").is_some());
+    assert!(rt.find("basics/refused").is_some());
+    open_advanced(&mut rt, Pane::General);
     assert!(rt.find("output/card/refused").is_none());
 }
 
@@ -145,46 +187,33 @@ fn a_refused_note_sits_with_the_shortcut_the_desktop_kept() {
     }
     rt.invalidate();
     rt.frame(0.0);
+    open_advanced(&mut rt, Pane::General);
     assert!(rt.find("output/card/refused").is_some());
-    assert!(rt.find("dictation/card/refused").is_none());
+    assert!(rt.find("basics/refused").is_none());
 }
 
 #[test]
-fn advanced_opens_while_in_use_and_always_closes() {
-    let mut rt = runtime("portal", true, GOLDEN_SIZE);
-    assert!(rt.find("microphone-mode").is_none());
+fn each_panes_advanced_fold_starts_closed_and_stays_its_own() {
+    let mut rt = runtime("portal", true, TALL_SIZE);
+    rt.state.settings.release_microphone_while_idle = true;
+    rt.invalidate();
+    settle(&mut rt);
+    assert!(rt.find("microphone-mode").is_none(), "closed even in use");
+    rt.state.settings.release_microphone_while_idle = false;
     tap(&mut rt, "advanced-toggle");
-    tap(&mut rt, "microphone-mode-control/segment1");
+    pick(&mut rt, "microphone-mode", 1);
     assert!(rt.state.confirm_release);
     tap(&mut rt, "advanced-toggle");
     assert!(!rt.state.confirm_release, "collapsing drops the question");
     assert!(rt.find("microphone-mode").is_none());
 
-    rt.state.advanced = None;
-    rt.state.settings.release_microphone_while_idle = true;
-    rt.invalidate();
-    settle(&mut rt);
-    assert!(rt.find("microphone-mode").is_some(), "in use opens it");
     tap(&mut rt, "advanced-toggle");
-    assert!(rt.find("microphone-mode").is_none(), "but it still closes");
-    tap(&mut rt, "advanced-toggle");
-    assert!(rt.find("microphone-mode").is_some());
-
-    rt.state.advanced = None;
-
-    rt.state.settings.release_microphone_while_idle = false;
     rt.state.settings.double_tap_lock = true;
     rt.state.settings.double_tap_only = true;
     rt.invalidate();
     settle(&mut rt);
-    assert!(
-        rt.find("double-tap-only").is_some(),
-        "so does Double-tap only"
-    );
-    rt.state.settings.shortcut_mode = crate::dictation::ShortcutMode::Toggle;
-    rt.invalidate();
-    settle(&mut rt);
-    assert!(rt.find("microphone-mode").is_none(), "but not in Toggle");
+    assert!(rt.find("double-tap-only").is_some());
+    assert_eq!(rt.state.advanced, vec![Pane::General]);
 }
 
 #[test]
@@ -197,8 +226,9 @@ fn desktops_without_a_portal_list_commands_instead_of_recording_rows() {
 
 #[test]
 fn toggles_save_through_the_host() {
-    let mut rt = runtime("portal", true, GOLDEN_SIZE);
+    let mut rt = runtime("portal", true, TALL_SIZE);
     assert!(rt.state.settings.paste_with_shift);
+    open_advanced(&mut rt, Pane::General);
     tap(&mut rt, "terminal-paste");
     assert!(!rt.state.settings.paste_with_shift);
     assert_eq!(saved(&rt), 1);
@@ -210,15 +240,15 @@ fn choosing_an_update_channel_saves_it_and_checks_now() {
     let mut rt = runtime("portal", true, GOLDEN_SIZE);
     tap(&mut rt, "advanced-toggle");
     assert_eq!(rt.state.settings.updates.channel, None);
-    let (other, segment) = other_update_channel();
-    tap(&mut rt, &segment);
+    let (other, index) = other_update_channel();
+    pick(&mut rt, "update-channel", index);
     assert_eq!(rt.state.settings.updates.channel, Some(other));
     assert_eq!(saved(&rt), 1);
     assert!(matches!(
         sent(&rt),
         [Request::Desktop(DesktopAction::CheckForUpdates)]
     ));
-    tap(&mut rt, &segment);
+    pick(&mut rt, "update-channel", index);
     assert_eq!(
         saved(&rt),
         1,
@@ -226,18 +256,15 @@ fn choosing_an_update_channel_saves_it_and_checks_now() {
     );
 }
 
-/// The channel this build does not follow, and its segment's id: the build's
-/// own channel depends on its version (a local build follows dev).
-fn other_update_channel() -> (crate::app_settings::UpdateChannel, String) {
+/// The channel this build does not follow, and its option's index: the
+/// build's own channel depends on its version (a local build follows dev).
+fn other_update_channel() -> (crate::app_settings::UpdateChannel, usize) {
     let build = crate::updater::build_channel();
     let index = crate::app_settings::UpdateChannel::ALL
         .iter()
         .position(|channel| *channel != build)
         .unwrap();
-    (
-        crate::app_settings::UpdateChannel::ALL[index],
-        format!("update-channel-control/segment{index}"),
-    )
+    (crate::app_settings::UpdateChannel::ALL[index], index)
 }
 
 #[test]
@@ -250,7 +277,7 @@ fn choosing_the_channel_in_effect_keeps_following_the_build() {
         .iter()
         .position(|channel| *channel == build)
         .unwrap();
-    tap(&mut rt, &format!("update-channel-control/segment{index}"));
+    pick(&mut rt, "update-channel", index);
     assert_eq!(rt.state.settings.updates.channel, None);
     assert_eq!(saved(&rt), 0);
     assert!(sent(&rt).is_empty());
@@ -296,7 +323,7 @@ fn enabling_sends_the_listener_action() {
 fn releasing_the_microphone_asks_first() {
     let mut rt = runtime("portal", true, GOLDEN_SIZE);
     tap(&mut rt, "advanced-toggle");
-    tap(&mut rt, "microphone-mode-control/segment1");
+    pick(&mut rt, "microphone-mode", 1);
     assert!(rt.state.confirm_release);
     assert!(!rt.state.settings.release_microphone_while_idle);
     tap(&mut rt, "confirm-release/actions/confirm-release");
@@ -532,20 +559,23 @@ fn every_scene_stops_asking_for_frames() {
 
 #[test]
 fn the_sidebar_has_no_modes_without_the_experiment() {
-    let rt = runtime("modes-off", true, PANE_SIZE);
+    let mut rt = runtime("modes-off", true, PANE_SIZE);
+    tap(&mut rt, "nav-labs");
     assert!(rt.find("nav-modes").is_none());
-    assert!(rt.find("nav-voice-action").is_some());
     assert!(!Pane::Modes.shown(&rt.state));
     let rt = runtime("modes", true, PANE_SIZE);
-    assert!(rt.find("nav-modes").is_some());
+    assert!(
+        rt.find("nav-modes").is_some(),
+        "Labs unfolds around its pane"
+    );
 }
 
 #[test]
 fn the_sidebar_switches_panes_and_keeps_settings() {
     let mut rt = runtime("portal", true, PANE_SIZE);
+    tap(&mut rt, "nav-labs");
     for (key, pane) in [
         ("nav-modes", Pane::Modes),
-        ("nav-voice-action", Pane::VoiceAction),
         ("nav-history", Pane::History),
         ("nav-general", Pane::General),
     ] {
@@ -559,6 +589,8 @@ fn the_sidebar_switches_panes_and_keeps_settings() {
 #[test]
 fn the_sidebar_switches_on_press_not_release() {
     let mut rt = runtime("portal", true, PANE_SIZE);
+    tap(&mut rt, "nav-labs");
+    settle(&mut rt);
     let (x, y) = rt.find("nav-modes").expect("the Modes item");
     rt.pointer_down(x, y);
     rt.frame(1.0 / 60.0);
@@ -571,6 +603,8 @@ fn the_sidebar_switches_on_press_not_release() {
 #[test]
 fn switching_panes_is_instant() {
     let mut rt = runtime("portal", true, PANE_SIZE);
+    tap(&mut rt, "nav-labs");
+    settle(&mut rt);
     let (x, y) = rt.find("nav-modes").expect("the Modes item");
     rt.pointer_down(x, y);
     rt.pointer_up(x, y);
@@ -584,8 +618,8 @@ fn switching_panes_is_instant() {
     assert!(
         !panel
             .iter()
-            .any(|e| e.key.as_deref() == Some("terminal-paste")),
-        "General left at once"
+            .any(|e| e.key.as_deref() == Some("lab-voice-action")),
+        "Labs left at once"
     );
     for element in panel {
         assert!(
@@ -606,10 +640,32 @@ fn element(rt: &Runtime<Ui>, key: &str) -> rune::ElementInfo {
 
 /// The sidebar's items, top to bottom, with their drawn rects.
 fn nav_items(rt: &Runtime<Ui>) -> Vec<(Pane, [f32; 4])> {
-    Pane::ALL
+    let mut items: Vec<_> = Pane::ALL
         .iter()
         .copied()
         .filter_map(|pane| rt.presented(pane.key()).map(|(rect, _)| (pane, rect)))
+        .collect();
+    items.sort_by(|a, b| a.1[1].total_cmp(&b.1[1]));
+    items
+}
+
+/// A sidebar row: its pane and rect.
+type NavRow = (Pane, [f32; 4]);
+
+/// Neighbouring sidebar items with nothing but a gap between them: the
+/// Labs row splits the main panes from the experiments.
+fn nav_neighbours(rt: &Runtime<Ui>) -> Vec<(NavRow, NavRow)> {
+    let labs = rt
+        .elements()
+        .into_iter()
+        .find(|e| e.key.as_deref() == Some("nav-labs"))
+        .map(|e| e.rect);
+    nav_items(rt)
+        .windows(2)
+        .map(|pair| (pair[0], pair[1]))
+        .filter(|((_, a), (_, b))| {
+            labs.is_none_or(|labs| labs[1] + labs[3] <= a[1] + a[3] || labs[1] >= b[1])
+        })
         .collect()
 }
 
@@ -635,6 +691,7 @@ fn hovered_items(rt: &mut Runtime<Ui>, x: f32, y: f32) -> Vec<Pane> {
 fn grouped_sidebar() -> Runtime<Ui> {
     let mut rt = runtime("mac-settings", true, PANE_SIZE);
     rt.state.platform.developer = true;
+    rt.state.labs_open = true;
     rt.invalidate();
     settle(&mut rt);
     let items = nav_items(&rt);
@@ -648,8 +705,7 @@ fn the_nearest_sidebar_item_hovers_in_every_gap() {
     let mut rt = grouped_sidebar();
     let items = nav_items(&rt);
     let x = items[0].1[0] + 40.0;
-    for pair in items.windows(2) {
-        let ((above, a), (below, b)) = (pair[0], pair[1]);
+    for ((above, a), (below, b)) in nav_neighbours(&rt) {
         let (gap_top, gap_bottom) = (a[1] + a[3], b[1]);
         let middle = (gap_top + gap_bottom) / 2.0;
         assert_eq!(hovered_items(&mut rt, x, a[1] + a[3] / 2.0), [above]);
@@ -670,25 +726,26 @@ fn a_press_in_a_sidebar_gap_selects_the_nearest_item() {
     let mut rt = grouped_sidebar();
     let items = nav_items(&rt);
     let x = items[0].1[0] + 40.0;
-    for pair in items.windows(2) {
-        let ((above, a), (below, b)) = (pair[0], pair[1]);
+    for ((above, a), (below, b)) in nav_neighbours(&rt) {
         let middle = (a[1] + a[3] + b[1]) / 2.0;
         for (y, pane) in [(middle - 0.5, above), (middle + 0.5, below)] {
+            // A fresh sidebar each time: choosing a main pane folds Labs.
+            rt = grouped_sidebar();
             rt.pointer_move(x, y);
             rt.pointer_down(x, y);
             rt.frame(1.0 / 60.0);
             assert_eq!(rt.state.pane, pane, "a press at {y} selects {pane:?}");
             rt.pointer_up(x, y);
-            settle(&mut rt);
         }
     }
 }
 
 #[test]
 fn a_settings_row_shows_no_hover_or_press_of_its_own() {
-    let mut rt = runtime("portal", true, PANE_SIZE);
+    let mut rt = runtime("portal", true, TALL_SIZE);
+    open_advanced(&mut rt, Pane::General);
     let before = rt.state.settings.double_tap_lock;
-    let (x, y) = rt.find("double-tap/copy").expect("the row's title");
+    let (x, y) = rt.find("double-tap/lead/copy").expect("the row's title");
     rt.pointer_move(x, y);
     rt.frame(1.0 / 120.0);
     let row = element(&rt, "double-tap");
@@ -707,11 +764,7 @@ fn a_settings_row_shows_no_hover_or_press_of_its_own() {
 #[test]
 fn hover_leaves_at_once() {
     let mut rt = runtime("mac-settings", true, PANE_SIZE);
-    for key in [
-        "update-status",
-        "dictation-hotkey",
-        "microphone-control-field-trigger",
-    ] {
+    for key in ["update-status", "dictation-hotkey", "microphone-control"] {
         let (x, y) = rt.find(key).unwrap_or_else(|| panic!("no element {key}"));
         rt.pointer_move(x, y);
         rt.frame(1.0 / 120.0);
@@ -737,12 +790,13 @@ fn assert_hover_is_binary(rt: &Runtime<Ui>, what: &str) {
 
 #[test]
 fn segments_and_switch_tracks_hover_at_once() {
-    let mut rt = runtime("portal", true, PANE_SIZE);
+    let mut rt = runtime("portal", true, TALL_SIZE);
+    open_advanced(&mut rt, Pane::General);
     let targets = [
-        rt.find("shortcut-mode-control"),
+        rt.find("shortcut-mode-control-trigger"),
         rt.find("double-tap/switch"),
     ];
-    for (target, name) in targets.into_iter().zip(["segment", "switch"]) {
+    for (target, name) in targets.into_iter().zip(["select", "switch"]) {
         let (x, y) = target.unwrap_or_else(|| panic!("no {name}"));
         rt.pointer_move(x, y);
         rt.frame(1.0 / 120.0);
@@ -1229,8 +1283,8 @@ fn changing_only_the_language_prepares_the_same_model_again() {
     });
     rt.invalidate();
     settle(&mut rt);
-    tap(&mut rt, "transcription-language-control-field-trigger");
-    assert_eq!(rt.state.open, Some(Menu::TranscriptionLanguage));
+    tap(&mut rt, "transcription-language-control-trigger");
+    assert_eq!(rt.state.open, Some(Menu::Pick("transcription-language")));
     // Whisper lists every language in the catalog's order.
     let japanese =
         crate::transcription_models::definition(TranscriptionModelId::WhisperLargeV3Turbo)
@@ -1238,10 +1292,7 @@ fn changing_only_the_language_prepares_the_same_model_again() {
             .iter()
             .position(|code| *code == "ja")
             .unwrap();
-    tap(
-        &mut rt,
-        &format!("transcription-language-control-item{japanese}"),
-    );
+    tap_option(&mut rt, japanese);
     assert_eq!(rt.state.open, None);
     assert_eq!(
         sent(&rt),
@@ -1292,16 +1343,12 @@ fn the_sidebar_moves_with_arrows_and_command_numbers() {
         "Tab enters at the current pane"
     );
     key(&mut rt, Key::Down, Mods::default());
-    assert_eq!(rt.state.pane, Pane::Modes, "selection follows the arrows");
+    assert_eq!(rt.state.pane, Pane::History, "selection follows the arrows");
     let command = Mods {
         cmd: true,
         ..Mods::default()
     };
-    let shown: Vec<_> = Pane::ALL
-        .iter()
-        .copied()
-        .filter(|pane| pane.shown(&rt.state))
-        .collect();
+    let shown = labs::order(&rt.state);
     key(&mut rt, Key::Command('3'), command);
     assert_eq!(rt.state.pane, shown[2]);
     assert!(
@@ -1314,10 +1361,11 @@ fn the_sidebar_moves_with_arrows_and_command_numbers() {
     assert_eq!(rt.state.pane, Pane::General, "no ninth pane");
     key(&mut rt, Key::Up, Mods::default());
     assert_eq!(rt.state.pane, Pane::General, "Up stops at the first pane");
-    let last = *shown.last().unwrap();
+    let main = labs::main_panes(&rt.state);
+    let last = *main.last().unwrap();
     key(
         &mut rt,
-        Key::Command(char::from(b'0' + shown.len() as u8)),
+        Key::Command(char::from(b'0' + main.len() as u8)),
         command,
     );
     key(&mut rt, Key::Down, Mods::default());
@@ -1328,6 +1376,7 @@ fn the_sidebar_moves_with_arrows_and_command_numbers() {
 fn toggle_rows_take_focus_and_flip_on_space() {
     let mut rt = runtime("portal", true, GOLDEN_SIZE);
     assert!(rt.state.settings.paste_with_shift);
+    open_advanced(&mut rt, Pane::General);
     tab_to(&mut rt, "terminal-paste");
     key(&mut rt, Key::Text(" ".into()), Mods::default());
     assert!(!rt.state.settings.paste_with_shift);
@@ -1417,7 +1466,7 @@ fn recognition_hints_save_when_typing_pauses() {
 
 #[test]
 fn the_microphone_field_names_the_input_in_use() {
-    let field = |rt: &Runtime<Ui>| element(rt, "microphone-control-field-trigger").label;
+    let field = |rt: &Runtime<Ui>| element(rt, "microphone-control").label;
     let rt = runtime("mac-settings", true, PANE_SIZE);
     assert_eq!(field(&rt).as_deref(), Some("System default, Kit Pods"));
 
@@ -1431,7 +1480,7 @@ fn the_microphone_field_names_the_input_in_use() {
 #[test]
 fn a_closed_lid_names_the_input_standing_in_for_the_built_in_microphone() {
     let note = "MacBook Pro Microphone is off while the lid is closed, so Hex listens to Studio Display Microphone";
-    let field = |rt: &Runtime<Ui>| element(rt, "microphone-control-field-trigger").label;
+    let field = |rt: &Runtime<Ui>| element(rt, "microphone-control").label;
     let mut rt = runtime("mac-microphone-lid-closed", true, PANE_SIZE);
     assert_eq!(
         field(&rt).as_deref(),
@@ -1458,11 +1507,9 @@ fn a_closed_lid_names_the_input_standing_in_for_the_built_in_microphone() {
 #[test]
 fn a_passed_over_bluetooth_default_names_the_input_in_use() {
     let note = "Kit Pods is Bluetooth, so Hex listens to MacBook Pro Microphone";
-    let mut rt = runtime("mac-microphone-bluetooth", true, PANE_SIZE);
+    let mut rt = runtime("mac-microphone-bluetooth", true, TALL_SIZE);
     assert_eq!(
-        element(&rt, "microphone-control-field-trigger")
-            .label
-            .as_deref(),
+        element(&rt, "microphone-control").label.as_deref(),
         Some("System default, MacBook Pro Microphone")
     );
     assert!(texts(&rt).contains(&note.to_owned()), "{:?}", texts(&rt));
