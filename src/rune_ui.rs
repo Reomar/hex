@@ -216,7 +216,8 @@ pub(crate) struct WindowCompositor {
 
 impl rune::compose::Compositor<Ui> for WindowCompositor {
     fn features(&self) -> wgpu::Features {
-        self.hero.features()
+        // The Sounds sheet's HUD, and one device shared with the HUD overlay.
+        self.hero.features() | crate::rune_hud::Painter::FEATURES
     }
 
     fn animating(&self) -> bool {
@@ -2446,6 +2447,9 @@ fn fixture(shortcuts: DesktopShortcuts) -> Ui {
 
 #[cfg(all(test, target_os = "linux"))]
 mod tests;
+
+#[cfg(test)]
+mod offscreen;
 
 #[cfg(test)]
 mod keyboard_model_tests;
