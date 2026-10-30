@@ -2,6 +2,11 @@ name: Prepare QwenCleo model (fork)
 
 on:
   workflow_dispatch:
+  # Bootstrap the new workflow before it exists on the default branch.
+  # Ordinary source pushes never start another multi-GB conversion.
+  push:
+    branches: [feat/qwencleo-asr]
+    paths: [.github/workflows/qwencleo-artifact.yml]
 
 permissions:
   contents: read
