@@ -468,7 +468,14 @@ fn model_card(
                 .child(metric(
                     "accuracy",
                     tr("Accuracy"),
-                    model.accuracy_label().unwrap_or_else(|| "System".into()),
+                    model.accuracy_label().unwrap_or_else(|| {
+                        tr(if matches!(model.runtime, ModelRuntime::AppleSpeech) {
+                            "System"
+                        } else {
+                            "Not measured"
+                        })
+                        .into()
+                    }),
                 )),
         );
     if !model.supports_language(language) {

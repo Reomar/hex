@@ -93,6 +93,10 @@ const PATHS: &[(&str, &str)] = &[
         "picker-japanese",
         "Window/Transcription model/Japanese saved",
     ),
+    (
+        "picker-qwencleo",
+        "Window/Transcription model/QwenCleo Arabic",
+    ),
     ("language-menu", "Window/Transcription model/Language menu"),
     (
         "language-fallback",

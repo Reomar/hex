@@ -9,6 +9,9 @@ evaluation justifies a recommendation change. Do not add Python, CUDA, a model
 server, or a second inference scheduler to the distributed app.
 
 Source baseline: Hex `933aa800fdd47928162103440024a257b956efa9`, from `dev`.
+Aligned with the fork's newer upstream `38666437` (Windows tray icon) before
+integration. Rust 1.99 Clippy required equivalent `as_chunks` iteration in the
+existing tray code and a transcription-engine test; no behavior changed.
 Development fork: <https://github.com/Reomar/hex>, branch `feat/qwencleo-asr`.
 Use a pull request to the fork's `dev`; do not write to upstream or `production`.
 
@@ -43,7 +46,9 @@ Use a pull request to the fork's `dev`; do not write to upstream or `production`
    The user authorized the fork-only preparation workflow and temporary use of
    their Hugging Face login as an Actions secret. Scope the secret to the
    publication step and remove it after preparation finishes. Keep the workflow
-   restricted to `Reomar/hex` and manual dispatch.
+   restricted to `Reomar/hex`. A preparation-workflow-only push on
+   `feat/qwencleo-asr` bootstraps its first run before it is registered on the
+   default branch; ordinary source pushes do not trigger conversion.
 2. Resolve and record the source checkpoint's full Hugging Face commit. Download
    only SafeTensors and the config/tokenizer/processor inputs. Do not load
    `training_args.bin` or require remote model code.
@@ -92,6 +97,9 @@ Download button in the shipping catalog. Register only the verified artifact.
    language hint, truthful capabilities, picker availability, unchanged
    recommendations, pinned artifact identity, and absence of timestamps or
    streaming. Reuse existing downloader integrity/cancellation tests.
+7. Add the same stable ID to `sdk/typescript/src/types.ts` and exercise catalog
+   decoding: the SDK rejects IDs outside its fixed list. Document that the fork
+   source change does not publish an SDK release or update existing consumers.
 
 ## Phase 3: checks, review and distribution
 
@@ -143,11 +151,27 @@ this optional Apple silicon test integration.
 
 ## Execution record
 
-- Fork created and base branch pushed; implementation not yet complete.
+- Fork created and integration branch pushed; implementation in progress.
 - Detailed plan committed as `0dff8c72`. Hugging Face login confirmed as
   `reomar15`; destination `reomar15/QwenCleo-ASR-transcribe-cpp-GGUF` created.
 - The user explicitly authorized the fork-only conversion workflow and a
   temporary Hugging Face Actions secret; delete the secret after preparation.
-- No checkpoint conversion, inference, checks, golden regeneration, compiled
-  app or physical dictation has passed yet. Replace this line with dated
-  observed evidence as phases finish.
+- On October 30, 2026, preparation run
+  <https://github.com/Reomar/hex/actions/runs/41048987583> passed source-hash and
+  tied-embedding checks, conversion, Q8_0 quantization, native CPU inference on
+  the public JFK fixture, metadata/tensor-type audit and publication.
+- Published artifact:
+  `reomar15/QwenCleo-ASR-transcribe-cpp-GGUF@08c66976a0496e1e3f1a88965eea123631e634fa`,
+  file `QwenCleo-ASR-1.7B-Q8_0.gguf`, 2,185,030,816 bytes,
+  SHA-256 `43bae9d5d7a26684b4a0faf1abc6e872b5825cc9147dbb7200da9ff4c5d12f87`.
+  The converted file has 709 tensors (707 source weights plus the frontend's
+  filterbank and window), all Q8_0 or F32. Native fixture output matched the
+  English JFK passage despite the Arabic hint; that is loading/inference
+  evidence, not an Egyptian speech benchmark.
+- The temporary Actions secret was removed after the successful run. The
+  fork's inherited Release, Site deploy and SDK release automation are disabled;
+  testing/build workflows remain enabled.
+- Local isolated Rust formatting and Python compilation pass. SDK typecheck,
+  build and all 71 tests pass, including new-ID catalog decoding.
+- Linux goldens, final integrated Rust checks, packaged Apple silicon app,
+  actual Metal inference and physical dictation acceptance remain pending.

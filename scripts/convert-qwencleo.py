@@ -65,7 +65,7 @@ def main():
     import torch
     from safetensors import safe_open
 
-    with safe_open(source / "model.safetensors", framework="pt", device="cpu") as tensors:
+    with safe_open(str(source / "model.safetensors"), framework="pt", device="cpu") as tensors:
         if "thinker.lm_head.weight" in tensors.keys() and not torch.equal(
             tensors.get_tensor("thinker.lm_head.weight"),
             tensors.get_tensor("thinker.model.embed_tokens.weight"),

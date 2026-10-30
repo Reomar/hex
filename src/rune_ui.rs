@@ -1832,6 +1832,13 @@ const SCENES: &[Scene] = &[
         ui.picker.installed = Some(vec![TranscriptionModelId::WhisperLargeV3Turbo]);
         picker::fixture(ui, None);
     }),
+    ("picker-qwencleo", |ui| {
+        *ui = portal_fixture();
+        ui.settings.transcription.model = TranscriptionModelId::WhisperLargeV3Turbo;
+        ui.settings.transcription.language = "ar".into();
+        ui.picker.installed = Some(vec![TranscriptionModelId::WhisperLargeV3Turbo]);
+        picker::fixture(ui, None);
+    }),
     // Parakeet chosen over Japanese: Settings names the language change.
     ("language-fallback", |ui| {
         *ui = portal_fixture();
