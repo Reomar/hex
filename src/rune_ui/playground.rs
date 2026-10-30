@@ -97,6 +97,7 @@ const PATHS: &[(&str, &str)] = &[
         "picker-qwencleo",
         "Window/Transcription model/QwenCleo Arabic",
     ),
+    ("vocabulary-unused", "Window/General/Vocabulary/Unused"),
     ("language-menu", "Window/Transcription model/Language menu"),
     (
         "language-fallback",

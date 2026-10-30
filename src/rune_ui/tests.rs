@@ -1282,7 +1282,7 @@ fn picker_card(language: &str, model: TranscriptionModelId) -> String {
 fn scroll_picker_to_model(rt: &mut Runtime<Ui>, model: TranscriptionModelId) {
     let card = picker_card(&rt.state.settings.transcription.language, model);
     for _ in 0..100 {
-        let target = element(rt, &card).rect;
+        let target = element(rt, &format!("{card}/top")).rect;
         let viewport = element(rt, "model-scroll").rect;
         if target[1] >= viewport[1] && target[1] + target[3] <= viewport[1] + viewport[3] {
             return;
