@@ -22,6 +22,8 @@ pub enum TranscriptionModelId {
     ParakeetV3,
     WhisperLargeV3Turbo,
     Qwen3Asr06B,
+    #[serde(rename = "qwencleo_asr_1_7b")]
+    QwenCleoAsr17B,
     SenseVoiceSmall,
     CohereTranscribe,
     #[serde(rename = "underdog_bark_3_pro")]
@@ -39,6 +41,7 @@ impl TranscriptionModelId {
             Self::ParakeetV3 => "parakeet_v3",
             Self::WhisperLargeV3Turbo => "whisper_large_v3_turbo",
             Self::Qwen3Asr06B => "qwen3_asr06_b",
+            Self::QwenCleoAsr17B => "qwencleo_asr_1_7b",
             Self::SenseVoiceSmall => "sense_voice_small",
             Self::CohereTranscribe => "cohere_transcribe",
             Self::UnderdogBark3Pro => "underdog_bark_3_pro",
@@ -58,6 +61,7 @@ impl FromStr for TranscriptionModelId {
             "parakeet_v3" => Ok(Self::ParakeetV3),
             "whisper_large_v3_turbo" => Ok(Self::WhisperLargeV3Turbo),
             "qwen3_asr06_b" => Ok(Self::Qwen3Asr06B),
+            "qwencleo_asr_1_7b" => Ok(Self::QwenCleoAsr17B),
             "sense_voice_small" => Ok(Self::SenseVoiceSmall),
             "cohere_transcribe" => Ok(Self::CohereTranscribe),
             "underdog_bark_3_pro" => Ok(Self::UnderdogBark3Pro),
@@ -147,7 +151,7 @@ pub struct ModelDefinition {
     pub name: &'static str,
     pub realtime: &'static str,
     /// Word error rate on the `quality_context` benchmark, in percent;
-    /// `None` when the system manages the model and publishes none.
+    /// `None` when there is no measured benchmark for the artifact.
     pub word_error_rate: Option<f64>,
     pub quality_context: &'static str,
     pub coverage: &'static str,
@@ -345,6 +349,15 @@ const QWEN_ARTIFACT: GgufArtifact = GgufArtifact {
     architecture: "qwen3_asr",
     variant: "qwen3-asr-0.6b",
 };
+const QWENCLEO_ARTIFACT: GgufArtifact = GgufArtifact {
+    filename: "QwenCleo-ASR-1.7B-Q8_0.gguf",
+    revision: "08c66976a0496e1e3f1a88965eea123631e634fa",
+    repository: "reomar15/QwenCleo-ASR-transcribe-cpp-GGUF",
+    bytes: 2_185_030_816,
+    sha256: "43bae9d5d7a26684b4a0faf1abc6e872b5825cc9147dbb7200da9ff4c5d12f87",
+    architecture: "qwen3_asr",
+    variant: "qwen3-asr-1.7b",
+};
 const SENSEVOICE_ARTIFACT: GgufArtifact = GgufArtifact {
     filename: "SenseVoiceSmall-Q8_0.gguf",
     revision: "4a08b8e900b38a977e32eb08d5d0697d6e72ba04",
@@ -474,6 +487,21 @@ pub const MODELS: &[ModelDefinition] = &[
         languages: QWEN_LANGUAGES,
         accepts_language_hint: true,
         supports_language_detection: true,
+        supports_recognition_hints: false,
+    },
+    ModelDefinition {
+        id: TranscriptionModelId::QwenCleoAsr17B,
+        name: "QwenCleo-ASR 1.7B",
+        realtime: "Not measured",
+        word_error_rate: None,
+        quality_context: "Not benchmarked in Hex",
+        coverage: "Egyptian Arabic + English",
+        timestamps: "No timestamps",
+        streams: false,
+        runtime: ModelRuntime::Gguf(&QWENCLEO_ARTIFACT),
+        languages: &["ar"],
+        accepts_language_hint: true,
+        supports_language_detection: false,
         supports_recognition_hints: false,
     },
     ModelDefinition {
@@ -1449,6 +1477,7 @@ mod tests {
                 "whisper_large_v3_turbo",
             ),
             (TranscriptionModelId::Qwen3Asr06B, "qwen3_asr06_b"),
+            (TranscriptionModelId::QwenCleoAsr17B, "qwencleo_asr_1_7b"),
             (TranscriptionModelId::SenseVoiceSmall, "sense_voice_small"),
             (TranscriptionModelId::CohereTranscribe, "cohere_transcribe"),
             (
@@ -1466,6 +1495,69 @@ mod tests {
             assert_eq!(serde_json::to_value(id).unwrap(), name);
         }
         assert!("unknown".parse::<TranscriptionModelId>().is_err());
+    }
+
+    #[test]
+    fn qwencleo_uses_arabic_hint_without_claiming_general_english_or_auto() {
+        let model = definition(TranscriptionModelId::QwenCleoAsr17B);
+        assert_eq!(model.language_choices(), ["ar"]);
+        assert_eq!(model.default_language(), "ar");
+        assert_eq!(model.runtime_language_hint("ar"), Some("ar"));
+        for previous in ["en", "ja", AUTO_LANGUAGE] {
+            assert_eq!(model.language_for(previous), "ar");
+            assert!(
+                validate(&TranscriptionSelection {
+                    model: model.id,
+                    language: previous.into(),
+                    recognition_hints: String::new(),
+                })
+                .is_err()
+            );
+        }
+        let selection = TranscriptionSelection {
+            model: model.id,
+            language: "ar".into(),
+            recognition_hints: String::new(),
+        };
+        assert!(validate(&selection).is_ok());
+        let roundtrip: TranscriptionSelection =
+            serde_json::from_str(&serde_json::to_string(&selection).unwrap()).unwrap();
+        assert_eq!(roundtrip, selection);
+        assert!(!model.streams);
+        assert!(!model.supports_recognition_hints);
+        assert!(!model.uses_vocabulary());
+        assert_eq!(model.timestamps, "No timestamps");
+        assert_eq!(model.accuracy_label(), None);
+        assert_eq!(model.realtime, "Not measured");
+    }
+
+    #[test]
+    fn qwencleo_is_an_optional_arabic_choice_without_changing_recommendations() {
+        let choices = picker_models("ar");
+        let index = choices
+            .iter()
+            .position(|(model, _)| model.id == TranscriptionModelId::QwenCleoAsr17B)
+            .unwrap();
+        assert_eq!(choices[index].1, None);
+        assert!(choices[index].0.supports_language("ar"));
+        let first_language_switch = choices
+            .iter()
+            .position(|(model, _)| !model.supports_language("ar"))
+            .unwrap();
+        assert!(index < first_language_switch);
+        assert_eq!(
+            recommended_selection("ar").model,
+            TranscriptionModelId::WhisperLargeV3Turbo
+        );
+        assert_eq!(
+            recommended_selection("en").model,
+            TranscriptionModelId::ParakeetUnifiedEnglish
+        );
+        assert!(
+            choices_for_runtime(AUTO_LANGUAGE)
+                .iter()
+                .all(|choice| choice.model.id != TranscriptionModelId::QwenCleoAsr17B)
+        );
     }
 
     #[test]

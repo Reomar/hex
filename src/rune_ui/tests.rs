@@ -1279,6 +1279,76 @@ fn picker_card(language: &str, model: TranscriptionModelId) -> String {
     format!("model{index}")
 }
 
+fn scroll_picker_to_model(rt: &mut Runtime<Ui>, model: TranscriptionModelId) {
+    let card = picker_card(&rt.state.settings.transcription.language, model);
+    for _ in 0..100 {
+        let target = element(rt, &card).rect;
+        let viewport = element(rt, "model-scroll").rect;
+        if target[1] >= viewport[1] && target[1] + target[3] <= viewport[1] + viewport[3] {
+            return;
+        }
+        // Rune's positive wheel delta moves the content down, so reveal a
+        // card below the viewport with a negative delta.
+        let dy = if target[1] < viewport[1] { 20.0 } else { -20.0 };
+        rt.wheel(
+            viewport[0] + viewport[2] / 2.0,
+            viewport[1] + viewport[3] / 2.0,
+            dy,
+        );
+        rt.frame(1.0 / 60.0);
+    }
+    panic!("model card {card} did not scroll into view");
+}
+
+#[test]
+fn qwencleo_picker_download_uses_arabic_and_does_not_invent_benchmarks() {
+    let mut rt = runtime("picker-qwencleo", true, PANE_SIZE);
+    scroll_picker_to_model(&mut rt, TranscriptionModelId::QwenCleoAsr17B);
+    let card = picker_card("ar", TranscriptionModelId::QwenCleoAsr17B);
+    let shown = texts(&rt);
+    assert!(shown.contains(&"QwenCleo-ASR 1.7B".to_owned()));
+    assert!(shown.contains(&"Not measured".to_owned()));
+    assert!(
+        shown
+            .iter()
+            .any(|text| text.contains("Egyptian Arabic + English"))
+    );
+    tap(&mut rt, &format!("{card}/top/actions/choose-model"));
+    assert_eq!(
+        sent(&rt),
+        [Request::ChooseModel {
+            model: TranscriptionModelId::QwenCleoAsr17B,
+            language: "ar".into(),
+        }]
+    );
+    assert_eq!(rt.state.picker.fallback, None);
+}
+
+#[test]
+fn choosing_qwencleo_from_english_shows_the_arabic_fallback() {
+    let mut rt = runtime("picker", true, PANE_SIZE);
+    scroll_picker_to_model(&mut rt, TranscriptionModelId::QwenCleoAsr17B);
+    let card = picker_card("en", TranscriptionModelId::QwenCleoAsr17B);
+    assert!(
+        texts(&rt).contains(&"Doesn't support English; switches the language to Arabic".to_owned())
+    );
+    tap(&mut rt, &format!("{card}/top/actions/choose-model"));
+    assert_eq!(
+        sent(&rt),
+        [Request::ChooseModel {
+            model: TranscriptionModelId::QwenCleoAsr17B,
+            language: "ar".into(),
+        }]
+    );
+    assert_eq!(
+        rt.state.picker.fallback,
+        Some(picker::LanguageFallback {
+            model: TranscriptionModelId::QwenCleoAsr17B,
+            from: "en".into(),
+        })
+    );
+}
+
 #[test]
 fn a_model_without_the_saved_language_falls_back_to_its_own_visibly() {
     let mut rt = runtime("picker", true, PANE_SIZE);
@@ -1730,6 +1800,9 @@ fn gpu() -> Option<std::sync::MutexGuard<'static, Gpu>> {
 fn render(scene: &str, dark: bool, size: (f32, f32)) -> Option<(u32, u32, Vec<u8>)> {
     let gpu = gpu()?;
     let mut rt = runtime(scene, dark, size);
+    if scene == "picker-qwencleo" {
+        scroll_picker_to_model(&mut rt, TranscriptionModelId::QwenCleoAsr17B);
+    }
     let mut renderer = crate::rune_ui::offscreen::renderer(&gpu.device);
     let (width, height) = (
         (size.0 * GOLDEN_SCALE) as u32,
@@ -1881,6 +1954,16 @@ fn goldens() {
     check_golden("menus", false, GOLDEN_SIZE);
     check_golden("modes-opencode-v1", false, PANE_SIZE);
     check_golden("onboarding", true, PANE_SIZE);
+}
+
+#[test]
+fn qwencleo_picker_dark_golden() {
+    check_golden("picker-qwencleo", true, PANE_SIZE);
+}
+
+#[test]
+fn qwencleo_picker_light_golden() {
+    check_golden("picker-qwencleo", false, PANE_SIZE);
 }
 
 mod panes;

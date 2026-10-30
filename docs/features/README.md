@@ -246,6 +246,33 @@ Settings picker or setup > model card     // setup.model-card; shared by every d
 └── Speed · Size · Accuracy -> 100% minus the benchmark word error rate
 ```
 
+```ts
+Local transcription > QwenCleo-ASR 1.7B     // setup.qwencleo; personal fork
+├── Download -> Pinned Q8_0 GGUF, size and SHA-256 verified -> Existing native engine
+├── Language -> Arabic (`ar` hint), including Egyptian Arabic/English mixed speech
+│   └── Switching from English or Auto -> Visible fallback to Arabic
+├── Release shortcut -> Whole-clip transcription; no Streams tag or timestamps
+└── Optional choice -> Existing recommendations and setup defaults stay unchanged
+```
+
+This fork adds `qwencleo_asr_1_7b`, a Qwen3-ASR 1.7B fine-tune by Mohammed Aly,
+through the existing `transcribe.cpp` backend. The card names Egyptian Arabic
+and English mixed speech, but exposes only Arabic: inherited 30-language
+metadata does not establish fine-tuned quality in those languages. Automatic
+language detection and recognition hints are not offered. Speed and accuracy
+show **Not measured**; the author's benchmark is not a Hex measurement.
+
+Checks: `qwencleo_uses_arabic_hint_without_claiming_general_english_or_auto` and
+`qwencleo_is_an_optional_arabic_choice_without_changing_recommendations` in the
+[catalog](../../src/transcription_models.rs); picker download and English-to-Arabic
+fallback requests and the `picker-qwencleo` light/dark goldens in
+[Rune tests](../../src/rune_ui/tests.rs); fixed-ID catalog decoding in the
+[TypeScript SDK](../../sdk/typescript/test/protocol.test.ts). These checks are
+not physical dictation or speech-quality proof. The SDK source accepts the new
+ID; no npm release is implied. The
+[integration plan](../plans/qwencleo-asr.md) records preparation and acceptance
+evidence separately.
+
 Only Parakeet Unified English is marked `streams`
 (`only_the_buffered_parakeet_artifact_is_marked_streaming`). The mark describes
 the artifact; dictation still streams only after the load probe succeeds on a GPU

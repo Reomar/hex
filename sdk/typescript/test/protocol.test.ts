@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { decodeEndpoint, decodeEndpointValue } from "../src/protocol.js"
+import { decodeEndpoint, decodeEndpointValue, decodeModels } from "../src/protocol.js"
 
 const endpoint = {
   type: "ready",
@@ -8,6 +8,22 @@ const endpoint = {
   apiVersion: "2",
   pid: 1,
 }
+
+describe("model catalog decoding", () => {
+  it("accepts the optional QwenCleo Arabic model from the native catalog", () => {
+    const model = {
+      id: "qwencleo_asr_1_7b",
+      name: "QwenCleo-ASR 1.7B",
+      installed: false,
+      verified: false,
+      managed: false,
+      downloadBytes: 1,
+      languages: ["ar"],
+      supportsLanguageDetection: false,
+    }
+    expect(decodeModels([model])).toEqual([model])
+  })
+})
 
 describe("endpoint decoding", () => {
   it("accepts the same endpoint from startup JSON and an already parsed value", () => {

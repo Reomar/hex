@@ -138,6 +138,11 @@ is currently unavailable in the native catalog. The optional `language` argument
 to `models.list()` affects readiness metadata, not language filtering; inspect
 each model's `languages` and `supportsLanguageDetection` fields.
 
+This fork adds `qwencleo_asr_1_7b` for Egyptian Arabic and Arabic/English mixed
+speech. Prepare and transcribe with `language: "ar"`; this is a source addition
+in the fork, not a published SDK release. Older SDKs that validate a fixed model
+ID list may reject a catalog containing the new model.
+
 ## Connect to HEX Desktop
 
 Alternatively, reuse the microphone and engine owned by the running HEX desktop

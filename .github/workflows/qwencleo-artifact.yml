@@ -1,0 +1,87 @@
+name: Prepare QwenCleo model (fork)
+
+on:
+  workflow_dispatch:
+  # Bootstrap the new workflow before it exists on the default branch.
+  # Ordinary source pushes never start another multi-GB conversion.
+  push:
+    branches: [feat/qwencleo-asr]
+    paths: [.github/workflows/qwencleo-artifact.yml]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qwencleo-artifact
+  cancel-in-progress: false
+
+jobs:
+  model:
+    if: github.repository == 'Reomar/hex'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e
+      - name: Fetch the pinned backend and conversion environment
+        run: |
+          git init "$RUNNER_TEMP/transcribe"
+          git -C "$RUNNER_TEMP/transcribe" remote add origin https://github.com/anomalyco/transcribe.cpp
+          git -C "$RUNNER_TEMP/transcribe" fetch --depth 1 origin 7045d1c0fe7cee37747b2792977421d435e75fca
+          git -C "$RUNNER_TEMP/transcribe" checkout --detach FETCH_HEAD
+          uv sync --locked --project "$RUNNER_TEMP/transcribe/scripts/envs/qwen3_asr" --python 3.12
+      - name: Download source weights without executable model code
+        run: |
+          uv run --project "$RUNNER_TEMP/transcribe/scripts/envs/qwen3_asr" python - <<'PY'
+          import os
+          from huggingface_hub import snapshot_download
+          snapshot_download(
+              "mohammedaly22/QwenCleo-ASR",
+              revision="50f6b901a3b882bdf28e71efd91f9f561510fc6f",
+              local_dir=os.environ["RUNNER_TEMP"] + "/source",
+              allow_patterns=["*.json", "*.safetensors", "merges.txt", "vocab.json"],
+          )
+          PY
+      - name: Convert and quantize
+        run: |
+          backend="$RUNNER_TEMP/transcribe"
+          uv run --project "$backend/scripts/envs/qwen3_asr" python scripts/convert-qwencleo.py \
+            "$backend" "$RUNNER_TEMP/source" "$RUNNER_TEMP/reference/QwenCleo-ASR-1.7B-BF16.gguf"
+          cmake -S "$backend" -B "$backend/build" -DCMAKE_BUILD_TYPE=Release \
+            -DTRANSCRIBE_METAL=OFF -DTRANSCRIBE_BUILD_TESTS=OFF -DTRANSCRIBE_BUILD_TOOLS=ON \
+            -DTRANSCRIBE_BUILD_EXAMPLES=ON -DTRANSCRIBE_USE_SYSTEM_BLAS=OFF
+          cmake --build "$backend/build" --target transcribe-quantize transcribe-cli -j 2
+          mkdir -p "$RUNNER_TEMP/model"
+          "$backend/build/bin/transcribe-quantize" \
+            "$RUNNER_TEMP/reference/QwenCleo-ASR-1.7B-BF16.gguf" \
+            "$RUNNER_TEMP/model/QwenCleo-ASR-1.7B-Q8_0.gguf" --quant Q8_0
+      - name: Exercise native inference on a public fixture
+        run: |
+          backend="$RUNNER_TEMP/transcribe"
+          "$backend/build/bin/transcribe-cli" \
+            -m "$RUNNER_TEMP/model/QwenCleo-ASR-1.7B-Q8_0.gguf" \
+            --backend cpu --threads 2 --language ar --timestamps none \
+            -o "$RUNNER_TEMP/native-fixture.txt" "$backend/samples/jfk.wav"
+          test -s "$RUNNER_TEMP/native-fixture.txt"
+      - name: Audit and publish to the owner's Hugging Face repository
+        env:
+          HF_TOKEN: ${{ secrets.QWENCLEO_HF_TOKEN }}
+        run: |
+          test -n "$HF_TOKEN"
+          curl --fail --silent --show-error --location \
+            https://raw.githubusercontent.com/MohammedAly22/QwenCleo-ASR/a3d37e4596ab048d1469222feeef3af9876f3674/LICENSE \
+            --output "$RUNNER_TEMP/source-LICENSE"
+          uv run --project "$RUNNER_TEMP/transcribe/scripts/envs/qwen3_asr" \
+            python scripts/publish-qwencleo.py "$RUNNER_TEMP/model/QwenCleo-ASR-1.7B-Q8_0.gguf" \
+            --license "$RUNNER_TEMP/source-LICENSE" --publish
+      - name: Upload preparation evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: qwencleo-artifact-manifest
+          path: |
+            ${{ runner.temp }}/model/published.json
+            ${{ runner.temp }}/native-fixture.txt
+          if-no-files-found: error
+          retention-days: 14
