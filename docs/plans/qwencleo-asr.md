@@ -40,6 +40,10 @@ Use a pull request to the fork's `dev`; do not write to upstream or `production`
 1. Check out the exact pinned backend outside the Hex source tree. Use its
    isolated Python 3.12 conversion environment. Install build tools separately;
    they are developer dependencies, not app dependencies.
+   The user authorized the fork-only preparation workflow and temporary use of
+   their Hugging Face login as an Actions secret. Scope the secret to the
+   publication step and remove it after preparation finishes. Keep the workflow
+   restricted to `Reomar/hex` and manual dispatch.
 2. Resolve and record the source checkpoint's full Hugging Face commit. Download
    only SafeTensors and the config/tokenizer/processor inputs. Do not load
    `training_args.bin` or require remote model code.
@@ -140,6 +144,10 @@ this optional Apple silicon test integration.
 ## Execution record
 
 - Fork created and base branch pushed; implementation not yet complete.
+- Detailed plan committed as `0dff8c72`. Hugging Face login confirmed as
+  `reomar15`; destination `reomar15/QwenCleo-ASR-transcribe-cpp-GGUF` created.
+- The user explicitly authorized the fork-only conversion workflow and a
+  temporary Hugging Face Actions secret; delete the secret after preparation.
 - No checkpoint conversion, inference, checks, golden regeneration, compiled
   app or physical dictation has passed yet. Replace this line with dated
   observed evidence as phases finish.
